@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Kivo Driver",
+    "slug": "kivo-driver-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "kivodriver",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kivorides.driver"
+    },
+    "android": {
+      "package": "com.kivorides.driver",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Kivo Driver uses your location to broadcast your position during trips."
+        }
+      ]
+    ]
+  }
+}

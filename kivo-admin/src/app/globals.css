@@ -2,34 +2,37 @@
 
 /* ─── Kivo Rides Design Tokens ─── */
 :root {
-  --bg: #0D1829;
+  --bg: #0d1829;
   --surface: #152133;
-  --surface-2: #1B2942;
+  --surface-2: #1b2942;
   --border: rgba(255, 255, 255, 0.065);
   --border-strong: rgba(255, 255, 255, 0.12);
   --divider: rgba(255, 255, 255, 0.05);
-  --text: #EDF2FF;
-  --text-muted: #8896AE;
-  --text-faint: #3E5170;
-  --primary: #00D46A;
-  --primary-dark: #00A854;
+  --text: #edf2ff;
+  --text-muted: #8896ae;
+  --text-faint: #3e5170;
+  --primary: #00d46a;
+  --primary-dark: #00a854;
   --primary-faint: rgba(0, 212, 106, 0.12);
   --primary-border: rgba(0, 212, 106, 0.25);
   --on-primary: #000000;
-  --danger: #FF4757;
+  --danger: #ff4757;
   --danger-faint: rgba(255, 71, 87, 0.12);
-  --warn: #FFB800;
+  --warn: #ffb800;
   --warn-faint: rgba(255, 184, 0, 0.12);
-  --info: #2196F3;
+  --info: #2196f3;
   --info-faint: rgba(33, 150, 243, 0.12);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   background-color: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   margin: 0;
   -webkit-font-smoothing: antialiased;
 }
@@ -51,15 +54,38 @@ body {
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: opacity 0.15s, background-color 0.15s;
+  transition:
+    opacity 0.15s,
+    background-color 0.15s;
 }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-primary { background-color: var(--primary); color: var(--on-primary); }
-.btn-primary:hover:not(:disabled) { background-color: var(--primary-dark); }
-.btn-outline { background-color: transparent; border-color: var(--border-strong); color: var(--text); }
-.btn-outline:hover:not(:disabled) { background-color: var(--surface-2); }
-.btn-danger { background-color: var(--danger-faint); border-color: rgba(255,71,87,0.25); color: var(--danger); }
-.btn-sm { padding: 6px 12px; font-size: 13px; }
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background-color: var(--primary);
+  color: var(--on-primary);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-dark);
+}
+.btn-outline {
+  background-color: transparent;
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.btn-outline:hover:not(:disabled) {
+  background-color: var(--surface-2);
+}
+.btn-danger {
+  background-color: var(--danger-faint);
+  border-color: rgba(255, 71, 87, 0.25);
+  color: var(--danger);
+}
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
 
 .input {
   width: 100%;
@@ -73,15 +99,37 @@ body {
   outline: none;
   transition: border-color 0.15s;
 }
-.input:focus { border-color: var(--primary-border); }
-.input::placeholder { color: var(--text-faint); }
+.input:focus {
+  border-color: var(--primary-border);
+}
+.input::placeholder {
+  color: var(--text-faint);
+}
 
-.text-t2 { color: var(--text-muted); }
-.text-t3 { color: var(--text-faint); }
-.text-primary { color: var(--primary); }
-.text-danger { color: var(--danger); }
-.bg-s2 { background-color: var(--surface-2); }
-.bg-surface { background-color: var(--surface); }
-.border-br { border-color: var(--border); }
-.border-br2 { border-color: var(--border-strong); }
-.rounded-r { border-radius: 12px; }
+.text-t2 {
+  color: var(--text-muted);
+}
+.text-t3 {
+  color: var(--text-faint);
+}
+.text-primary {
+  color: var(--primary);
+}
+.text-danger {
+  color: var(--danger);
+}
+.bg-s2 {
+  background-color: var(--surface-2);
+}
+.bg-surface {
+  background-color: var(--surface);
+}
+.border-br {
+  border-color: var(--border);
+}
+.border-br2 {
+  border-color: var(--border-strong);
+}
+.rounded-r {
+  border-radius: 12px;
+}
