@@ -1,0 +1,10 @@
+@'
+node_modules/
+.git/
+android/
+ios/
+.expo/
+dist/
+*.log
+.vscode/
+'@ | Out-File -FilePath ".easignore" -Encoding utf8

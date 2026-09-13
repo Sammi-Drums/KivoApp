@@ -6,7 +6,9 @@
     "orientation": "portrait",
     "scheme": "kivodriver",
     "userInterfaceStyle": "dark",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kivorides.driver"
@@ -26,6 +28,11 @@
           "locationAlwaysAndWhenInUsePermission": "Kivo Driver uses your location to broadcast your position during trips."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "30e38bfa-95f5-4694-9529-4fd1eebfc94f"
+      }
+    }
   }
 }
