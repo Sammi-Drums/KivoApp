@@ -27,7 +27,7 @@ export default function DriverDetailPage() {
   const [vehicles, setVehicles] = useState([]);
   const [approvalLogs, setApprovalLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState(null); // which action is running
   const [error, setError] = useState("");
 
   const fetchDriver = async () => {
@@ -70,10 +70,9 @@ export default function DriverDetailPage() {
   };
 
   const runAction = async (action) => {
-    setActionLoading(true);
+    setLoadingAction(action); // only THIS action shows loading
     setError("");
 
-    // Get current admin (to record WHO did this)
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -113,11 +112,10 @@ export default function DriverDetailPage() {
 
     if (updateError) {
       setError(updateError.message);
-      setActionLoading(false);
+      setLoadingAction(null);
       return;
     }
 
-    // Write to audit log
     if (adminRecord?.id) {
       await supabase.from("driver_approval_logs").insert({
         driver_id: params.id,
@@ -128,7 +126,7 @@ export default function DriverDetailPage() {
     }
 
     await fetchDriver();
-    setActionLoading(false);
+    setLoadingAction(null);
   };
 
   const ACTION_CONFIG = {
@@ -269,7 +267,6 @@ export default function DriverDetailPage() {
           gap: 20,
         }}
       >
-        {/* LEFT */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div
             style={{
@@ -419,7 +416,6 @@ export default function DriverDetailPage() {
           </div>
         </div>
 
-        {/* RIGHT */}
         <div>
           <div
             style={{
@@ -455,11 +451,13 @@ export default function DriverDetailPage() {
                 actions.map((action) => {
                   const cfg = ACTION_CONFIG[action];
                   const Icon = cfg.icon;
+                  const isThisLoading = loadingAction === action;
+                  const anyLoading = loadingAction !== null;
                   return (
                     <button
                       key={action}
                       onClick={() => runAction(action)}
-                      disabled={actionLoading}
+                      disabled={anyLoading}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -474,11 +472,11 @@ export default function DriverDetailPage() {
                         padding: 12,
                         fontSize: 14,
                         fontWeight: 700,
-                        cursor: actionLoading ? "not-allowed" : "pointer",
-                        opacity: actionLoading ? 0.6 : 1,
+                        cursor: anyLoading ? "not-allowed" : "pointer",
+                        opacity: anyLoading && !isThisLoading ? 0.4 : 1,
                       }}
                     >
-                      {actionLoading ? (
+                      {isThisLoading ? (
                         <IconLoader2
                           size={16}
                           style={{ animation: "kivospin 0.8s linear infinite" }}
@@ -495,7 +493,6 @@ export default function DriverDetailPage() {
             <style>{`@keyframes kivospin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
           </div>
 
-          {/* Activity Log */}
           <div
             style={{
               backgroundColor: C.surface,
