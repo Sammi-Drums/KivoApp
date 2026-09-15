@@ -18,6 +18,9 @@ import {
   IconId,
   IconCar,
   IconLoader2,
+  IconFileText,
+  IconPhoto,
+  IconExternalLink,
 } from "@tabler/icons-react";
 
 export default function DriverDetailPage() {
@@ -25,9 +28,10 @@ export default function DriverDetailPage() {
   const params = useParams();
   const [driver, setDriver] = useState(null);
   const [vehicles, setVehicles] = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [approvalLogs, setApprovalLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadingAction, setLoadingAction] = useState(null); // which action is running
+  const [loadingAction, setLoadingAction] = useState(null);
   const [error, setError] = useState("");
 
   const fetchDriver = async () => {
@@ -43,6 +47,12 @@ export default function DriverDetailPage() {
       .select("*")
       .eq("driver_id", params.id);
     setVehicles(vData || []);
+
+    const { data: docs } = await supabase
+      .from("driver_documents")
+      .select("*")
+      .eq("driver_id", params.id);
+    setDocuments(docs || []);
 
     const { data: logs } = await supabase
       .from("driver_approval_logs")
@@ -70,9 +80,8 @@ export default function DriverDetailPage() {
   };
 
   const runAction = async (action) => {
-    setLoadingAction(action); // only THIS action shows loading
+    setLoadingAction(action);
     setError("");
-
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -109,7 +118,6 @@ export default function DriverDetailPage() {
       .from("drivers")
       .update(updates)
       .eq("id", params.id);
-
     if (updateError) {
       setError(updateError.message);
       setLoadingAction(null);
@@ -124,7 +132,6 @@ export default function DriverDetailPage() {
         remarks: null,
       });
     }
-
     await fetchDriver();
     setLoadingAction(null);
   };
@@ -166,11 +173,10 @@ export default function DriverDetailPage() {
           color={C.primary}
           style={{ animation: "kivospin 0.8s linear infinite" }}
         />
-        <style>{`@keyframes kivospin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        <style>{`@keyframes kivospin {from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
       </div>
     );
   }
-
   if (!driver) {
     return (
       <div style={{ textAlign: "center", padding: 60 }}>
@@ -268,6 +274,7 @@ export default function DriverDetailPage() {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Profile */}
           <div
             style={{
               backgroundColor: C.surface,
@@ -284,7 +291,20 @@ export default function DriverDetailPage() {
                 marginBottom: 20,
               }}
             >
-              <Avatar name={driver.full_name} size={64} />
+              {driver.profile_photo_url ? (
+                <img
+                  src={driver.profile_photo_url}
+                  alt={driver.full_name}
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <Avatar name={driver.full_name} size={64} />
+              )}
               <div>
                 <h2
                   style={{
@@ -296,12 +316,27 @@ export default function DriverDetailPage() {
                 >
                   {driver.full_name}
                 </h2>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
                   <Badge>{driver.driver_status}</Badge>
                   <Badge>{driver.approval_status}</Badge>
                   <Badge color={C.info}>
                     {driver.driver_category || "economy"}
                   </Badge>
+                  {driver.rating_count > 0 && (
+                    <span
+                      style={{ fontSize: 13, color: C.warn, fontWeight: 700 }}
+                    >
+                      ★ {Number(driver.rating_average).toFixed(1)} (
+                      {driver.rating_count})
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -351,6 +386,139 @@ export default function DriverDetailPage() {
             </div>
           </div>
 
+          {/* DOCUMENTS — the new part */}
+          <div
+            style={{
+              backgroundColor: C.surface,
+              border: `1px solid ${C.border}`,
+              borderRadius: 16,
+              padding: 20,
+            }}
+          >
+            <h3
+              style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: C.text,
+                margin: "0 0 16px 0",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <IconFileText size={18} color={C.primary} /> Documents &
+              Verification
+            </h3>
+
+            {/* Profile photo preview */}
+            {driver.profile_photo_url && (
+              <div style={{ marginBottom: 16 }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: C.textMuted,
+                    marginBottom: 8,
+                    fontWeight: 600,
+                  }}
+                >
+                  PROFILE PHOTO
+                </div>
+                <a
+                  href={driver.profile_photo_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src={driver.profile_photo_url}
+                    alt="Driver"
+                    style={{
+                      width: 120,
+                      height: 120,
+                      borderRadius: 12,
+                      objectFit: "cover",
+                      border: `1px solid ${C.border}`,
+                      cursor: "pointer",
+                    }}
+                  />
+                </a>
+              </div>
+            )}
+
+            {/* Documents PDF */}
+            {documents.length > 0 ? (
+              documents.map((doc) => (
+                <a
+                  key={doc.id}
+                  href={doc.document_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    backgroundColor: C.bg,
+                    borderRadius: 10,
+                    padding: 14,
+                    textDecoration: "none",
+                    marginBottom: 8,
+                    border: `1px solid ${C.border}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 8,
+                      backgroundColor: C.primaryFaint,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <IconFileText size={20} color={C.primary} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: C.text,
+                        fontWeight: 600,
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {doc.document_type.replace(/_/g, " ")} document
+                    </div>
+                    <div style={{ fontSize: 12, color: C.textMuted }}>
+                      Uploaded{" "}
+                      {new Date(doc.uploaded_at).toLocaleDateString("en-US", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      color: C.primary,
+                      fontSize: 13,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Open <IconExternalLink size={14} />
+                  </div>
+                </a>
+              ))
+            ) : (
+              <p style={{ color: C.textMuted, fontSize: 14 }}>
+                No documents uploaded.
+              </p>
+            )}
+          </div>
+
+          {/* Vehicles */}
           <div
             style={{
               backgroundColor: C.surface,
@@ -416,6 +584,7 @@ export default function DriverDetailPage() {
           </div>
         </div>
 
+        {/* RIGHT column */}
         <div>
           <div
             style={{
@@ -430,11 +599,16 @@ export default function DriverDetailPage() {
                 fontSize: 16,
                 fontWeight: 700,
                 color: C.text,
-                margin: "0 0 16px 0",
+                margin: "0 0 8px 0",
               }}
             >
               Actions
             </h3>
+            <p
+              style={{ fontSize: 12, color: C.textMuted, margin: "0 0 16px 0" }}
+            >
+              Review the documents above before approving.
+            </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {actions.length === 0 ? (
                 <p
@@ -490,7 +664,7 @@ export default function DriverDetailPage() {
                 })
               )}
             </div>
-            <style>{`@keyframes kivospin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+            <style>{`@keyframes kivospin {from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
           </div>
 
           <div
