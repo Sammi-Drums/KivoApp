@@ -6,5 +6,5 @@ ios/
 .expo/
 dist/
 *.log
-.vscode/
+.gradle/
 '@ | Out-File -FilePath ".easignore" -Encoding utf8
