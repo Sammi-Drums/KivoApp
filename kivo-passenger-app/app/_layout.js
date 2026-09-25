@@ -11,14 +11,25 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
+    let done = false;
+    // Safety: if getSession hangs, stop loading after 3 seconds anyway
+    const timer = setTimeout(() => { if (!done) setLoading(false); }, 3000);
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      done = true;
+      clearTimeout(timer);
       setSession(session);
       setLoading(false);
+    }).catch(() => {
+      done = true;
+      clearTimeout(timer);
+      setLoading(false);
     });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setSession(session);
     });
-    return () => subscription.unsubscribe();
+    return () => { subscription.unsubscribe(); clearTimeout(timer); };
   }, []);
 
   useEffect(() => {
