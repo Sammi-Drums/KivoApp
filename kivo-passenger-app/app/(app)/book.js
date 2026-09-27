@@ -8,18 +8,20 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  FlatList,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import { supabase } from "../../lib/supabase";
 import {
   getCurrentLocation,
   reverseGeocode,
-  forwardGeocode,
-  estimateRoadDistance,
+  searchPlaces,
+  getRoute,
+  haversineKm,
 } from "../../lib/location";
 import { RIDE_TIERS } from "../../lib/tiers";
 import { getPricingConfig, calculateFare } from "../../lib/pricing";
@@ -37,85 +39,135 @@ const PAYMENTS = [
 
 export default function BookScreen() {
   const router = useRouter();
-  const dropoffRef = useRef(null);
-
-  const [pickup, setPickup] = useState("");
-  const [pickupCoords, setPickupCoords] = useState(null);
-  const [dropoff, setDropoff] = useState("");
-  const [distance, setDistance] = useState(0);
+  const [pickup, setPickup] = useState(null);
+  const [dropoff, setDropoff] = useState(null);
+  const [route, setRoute] = useState(null);
   const [tier, setTier] = useState("economy");
   const [payment, setPayment] = useState("cash");
   const [config, setConfig] = useState(null);
-  const [locating, setLocating] = useState(false);
-  const [calculating, setCalculating] = useState(false);
+  const [loadingRoute, setLoadingRoute] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Direct-typing search state
+  const [activeField, setActiveField] = useState(null); // 'pickup' | 'dropoff' | null
+  const [pickupText, setPickupText] = useState("");
+  const [dropoffText, setDropoffText] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef(null);
+
   const [couponCode, setCouponCode] = useState("");
-  const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [couponApplied, setCouponApplied] = useState(null);
   const [couponError, setCouponError] = useState(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   useEffect(() => {
     getPricingConfig().then(setConfig);
   }, []);
 
-  const useMyLocation = async () => {
-    setLocating(true);
-    const result = await getCurrentLocation();
-    if (result.error === "permission_denied") {
-      Alert.alert(
-        "Location needed",
-        "Please enable location access in settings.",
-      );
-      setLocating(false);
+  // Prefill pickup with current location
+  useEffect(() => {
+    (async () => {
+      const res = await getCurrentLocation();
+      if (!res.error) {
+        const addr = await reverseGeocode(res.latitude, res.longitude);
+        const p = {
+          latitude: res.latitude,
+          longitude: res.longitude,
+          address: addr || "Current location",
+        };
+        setPickup(p);
+        setPickupText(p.address);
+      }
+    })();
+  }, []);
+
+  // Debounced search as user types
+  const onType = (text, field) => {
+    if (field === "pickup") setPickupText(text);
+    else setDropoffText(text);
+    setActiveField(field);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (text.trim().length < 3) {
+      setResults([]);
       return;
     }
-    if (result.error) {
-      Alert.alert(
-        "Location failed",
-        "Could not get location. Type it manually.",
-      );
-      setLocating(false);
-      return;
-    }
-    setPickupCoords({ latitude: result.latitude, longitude: result.longitude });
-    const addr = await reverseGeocode(result.latitude, result.longitude);
-    setPickup(
-      addr ||
-        `Current location (${result.latitude.toFixed(4)}, ${result.longitude.toFixed(4)})`,
-    );
-    setLocating(false);
-    setTimeout(() => dropoffRef.current?.focus(), 100);
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true);
+      const found = await searchPlaces(text.trim());
+      setResults(found);
+      setSearching(false);
+    }, 500);
   };
 
-  const calcDistance = async () => {
-    if (!pickupCoords || !dropoff.trim()) {
-      Alert.alert("Missing info", "Set pickup and destination first.");
-      return;
+  const pickResult = (item) => {
+    const loc = {
+      latitude: item.latitude,
+      longitude: item.longitude,
+      address: item.name,
+    };
+    if (activeField === "pickup") {
+      setPickup(loc);
+      setPickupText(item.name);
+    } else {
+      setDropoff(loc);
+      setDropoffText(item.name);
     }
-    setCalculating(true);
-    const lookup = await forwardGeocode(dropoff.trim());
-    if (!lookup) {
-      Alert.alert(
-        "Not found",
-        'Try being more specific (e.g. "UB Campus Bambili").',
-      );
-      setCalculating(false);
-      return;
-    }
-    const km = estimateRoadDistance(
-      pickupCoords.latitude,
-      pickupCoords.longitude,
-      lookup.latitude,
-      lookup.longitude,
-    );
-    setDistance(Math.round(km * 10) / 10);
-    setCalculating(false);
-    setCouponApplied(null);
-    setCouponError(null);
+    setResults([]);
+    setActiveField(null);
+    Keyboard.dismiss();
   };
 
-  const durationMin = Math.round((distance / 25) * 60);
+  const useMyLocationForPickup = async () => {
+    const res = await getCurrentLocation();
+    if (res.error) {
+      Alert.alert("Location", "Could not get your location.");
+      return;
+    }
+    const addr = await reverseGeocode(res.latitude, res.longitude);
+    const p = {
+      latitude: res.latitude,
+      longitude: res.longitude,
+      address: addr || "Current location",
+    };
+    setPickup(p);
+    setPickupText(p.address);
+    setResults([]);
+    setActiveField(null);
+  };
+
+  // Calculate route when both set
+  useEffect(() => {
+    if (pickup && dropoff) {
+      setLoadingRoute(true);
+      getRoute(
+        pickup.latitude,
+        pickup.longitude,
+        dropoff.latitude,
+        dropoff.longitude,
+      ).then((r) => {
+        if (r) setRoute(r);
+        else {
+          const km = haversineKm(
+            pickup.latitude,
+            pickup.longitude,
+            dropoff.latitude,
+            dropoff.longitude,
+          );
+          setRoute({
+            distanceKm: km,
+            durationMin: Math.round((km / 25) * 60),
+            coordinates: [pickup, dropoff],
+          });
+        }
+        setLoadingRoute(false);
+        setCouponApplied(null);
+      });
+    }
+  }, [pickup, dropoff]);
+
+  const distance = route?.distanceKm || 0;
+  const durationMin = route?.durationMin || 0;
   const baseFare =
     distance > 0 && config
       ? calculateFare(
@@ -149,7 +201,6 @@ export default function BookScreen() {
       const result = await validateCoupon(couponCode, passenger.id, baseFare);
       if (result.valid) {
         setCouponApplied(result);
-        setCouponError(null);
       } else {
         setCouponApplied(null);
         setCouponError(result.reason);
@@ -161,14 +212,7 @@ export default function BookScreen() {
     }
   };
 
-  const removeCoupon = () => {
-    setCouponApplied(null);
-    setCouponCode("");
-    setCouponError(null);
-  };
-
-  const canSubmit =
-    pickup.trim() && dropoff.trim() && distance > 0 && !submitting;
+  const canSubmit = pickup && dropoff && distance > 0 && !submitting;
 
   const handleBook = async () => {
     if (!canSubmit) return;
@@ -183,16 +227,18 @@ export default function BookScreen() {
         .eq("user_id", user.id)
         .single();
       if (!passenger) throw new Error("Passenger profile not found");
-
       const finalFare = couponApplied ? couponApplied.finalFare : baseFare;
-
       const { data: trip, error: tripError } = await supabase
         .from("trips")
         .insert({
           passenger_id: passenger.id,
           driver_id: null,
-          pickup_location: pickup.trim(),
-          dropoff_location: dropoff.trim(),
+          pickup_location: pickup.address,
+          dropoff_location: dropoff.address,
+          pickup_latitude: pickup.latitude,
+          pickup_longitude: pickup.longitude,
+          dropoff_latitude: dropoff.latitude,
+          dropoff_longitude: dropoff.longitude,
           distance_km: distance,
           duration_minutes: durationMin,
           fare: finalFare,
@@ -204,7 +250,6 @@ export default function BookScreen() {
         .select()
         .single();
       if (tripError) throw tripError;
-
       if (couponApplied)
         await recordCouponUsage(
           couponApplied.promotion.id,
@@ -212,24 +257,24 @@ export default function BookScreen() {
           trip.id,
           discountAmount,
         );
-
-      await supabase.from("payments").insert({
-        trip_id: trip.id,
-        amount: finalFare,
-        payment_method: payment,
-        payment_status: "pending",
-      });
-
+      await supabase
+        .from("payments")
+        .insert({
+          trip_id: trip.id,
+          amount: finalFare,
+          payment_method: payment,
+          payment_status: "pending",
+        });
       Alert.alert(
         "Ride Requested! 🎉",
         `Trip ${trip.trip_code} created. A driver will accept shortly.`,
         [{ text: "View", onPress: () => router.push("/(app)/history") }],
       );
-      setPickup("");
-      setPickupCoords(null);
-      setDropoff("");
-      setDistance(0);
-      removeCoupon();
+      setDropoff(null);
+      setDropoffText("");
+      setRoute(null);
+      setCouponApplied(null);
+      setCouponCode("");
     } catch (err) {
       Alert.alert("Booking failed", err.message);
     } finally {
@@ -237,109 +282,154 @@ export default function BookScreen() {
     }
   };
 
+  const mapRegion = pickup
+    ? {
+        latitude: dropoff
+          ? (pickup.latitude + dropoff.latitude) / 2
+          : pickup.latitude,
+        longitude: dropoff
+          ? (pickup.longitude + dropoff.longitude) / 2
+          : pickup.longitude,
+        latitudeDelta: dropoff
+          ? Math.abs(pickup.latitude - dropoff.latitude) * 1.8 + 0.02
+          : 0.02,
+        longitudeDelta: dropoff
+          ? Math.abs(pickup.longitude - dropoff.longitude) * 1.8 + 0.02
+          : 0.02,
+      }
+    : {
+        latitude: 5.9631,
+        longitude: 10.1591,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      };
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1 }}
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={styles.title}>Book a Ride</Text>
-          <Text style={styles.subtitle}>Where are you going?</Text>
+        <Text style={styles.title}>Book a Ride</Text>
 
-          {/* Route */}
-          <View style={styles.card}>
-            <View style={styles.routeRow}>
-              <View style={[styles.dot, { backgroundColor: theme.primary }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.routeLabel}>PICKUP</Text>
-                <TextInput
-                  style={styles.routeInput}
-                  value={pickup}
-                  onChangeText={setPickup}
-                  placeholder="Your location"
-                  placeholderTextColor={theme.textFaint}
-                  editable={!submitting}
-                />
-              </View>
-            </View>
+        {/* Direct-type PICKUP */}
+        <View style={styles.field}>
+          <View style={styles.fieldRow}>
+            <View style={[styles.dot, { backgroundColor: theme.primary }]} />
+            <TextInput
+              style={styles.fieldInput}
+              value={pickupText}
+              onChangeText={(t) => onType(t, "pickup")}
+              onFocus={() => setActiveField("pickup")}
+              placeholder="Pickup location"
+              placeholderTextColor={theme.textFaint}
+              editable={!submitting}
+            />
             <TouchableOpacity
-              style={styles.gpsBtn}
-              onPress={useMyLocation}
-              disabled={locating}
+              onPress={useMyLocationForPickup}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              {locating ? (
-                <ActivityIndicator color={theme.primary} size="small" />
-              ) : (
-                <>
-                  <Ionicons name="locate" size={16} color={theme.primary} />
-                  <Text style={styles.gpsText}>Use my current location</Text>
-                </>
-              )}
+              <Ionicons name="locate" size={20} color={theme.primary} />
             </TouchableOpacity>
-            <View style={styles.routeLine} />
-            <View style={styles.routeRow}>
-              <View style={[styles.dot, { backgroundColor: theme.danger }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.routeLabel}>DROP-OFF</Text>
-                <TextInput
-                  ref={dropoffRef}
-                  style={styles.routeInput}
-                  value={dropoff}
-                  onChangeText={setDropoff}
-                  placeholder="e.g. UB Campus Bambili"
-                  placeholderTextColor={theme.textFaint}
-                  editable={!submitting}
-                />
-              </View>
-            </View>
-            <TouchableOpacity
-              style={[
-                styles.calcBtn,
-                (!pickupCoords || !dropoff.trim() || calculating) && {
-                  opacity: 0.5,
-                },
-              ]}
-              onPress={calcDistance}
-              disabled={!pickupCoords || !dropoff.trim() || calculating}
-            >
-              {calculating ? (
-                <ActivityIndicator color={theme.text} size="small" />
-              ) : (
-                <>
-                  <Ionicons name="calculator" size={16} color={theme.text} />
-                  <Text style={styles.calcText}>Calculate distance</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            {distance > 0 && (
-              <View style={styles.distInfo}>
-                <Text style={styles.distLabel}>Distance</Text>
-                <Text style={styles.distValue}>
-                  {distance} km · ≈ {durationMin} min
-                </Text>
+          </View>
+        </View>
+
+        {/* Direct-type DROPOFF */}
+        <View style={styles.field}>
+          <View style={styles.fieldRow}>
+            <View style={[styles.dot, { backgroundColor: theme.danger }]} />
+            <TextInput
+              style={styles.fieldInput}
+              value={dropoffText}
+              onChangeText={(t) => onType(t, "dropoff")}
+              onFocus={() => setActiveField("dropoff")}
+              placeholder="Where to?"
+              placeholderTextColor={theme.textFaint}
+              editable={!submitting}
+            />
+          </View>
+        </View>
+
+        {/* Search results dropdown */}
+        {activeField && (results.length > 0 || searching) && (
+          <View style={styles.results}>
+            {searching && (
+              <View style={styles.searchingRow}>
+                <ActivityIndicator size="small" color={theme.primary} />
+                <Text style={styles.searchingText}>Searching…</Text>
               </View>
             )}
+            {results.map((item, i) => (
+              <TouchableOpacity
+                key={i}
+                style={styles.resultRow}
+                onPress={() => pickResult(item)}
+              >
+                <Ionicons
+                  name="location-outline"
+                  size={18}
+                  color={theme.textMuted}
+                />
+                <Text style={styles.resultText} numberOfLines={2}>
+                  {item.fullName}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
+        )}
 
-          {/* Ride tiers */}
+        {/* Map preview (Google tiles) */}
+        {pickup && (
+          <View style={styles.mapCard}>
+            <MapView
+              provider={PROVIDER_GOOGLE}
+              style={styles.map}
+              region={mapRegion}
+            >
+              <Marker coordinate={pickup} title="Pickup" pinColor="green" />
+              {dropoff && (
+                <Marker coordinate={dropoff} title="Drop-off" pinColor="red" />
+              )}
+              {route?.coordinates && (
+                <Polyline
+                  coordinates={route.coordinates}
+                  strokeColor={theme.primary}
+                  strokeWidth={4}
+                />
+              )}
+            </MapView>
+          </View>
+        )}
+
+        {loadingRoute && (
+          <View style={styles.routeLoading}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={styles.routeLoadingText}>Calculating route…</Text>
+          </View>
+        )}
+        {distance > 0 && !loadingRoute && (
+          <View style={styles.distInfo}>
+            <Text style={styles.distLabel}>Distance</Text>
+            <Text style={styles.distValue}>
+              {distance} km · ≈ {durationMin} min
+            </Text>
+          </View>
+        )}
+
+        {distance > 0 && (
           <View style={styles.card}>
             <Text style={styles.sectionLabel}>CHOOSE YOUR RIDE</Text>
             {RIDE_TIERS.map((t) => {
               const sel = tier === t.value;
-              const price =
-                distance > 0 && config
-                  ? calculateFare(
-                      distance,
-                      durationMin,
-                      t.value,
-                      config.pricing,
-                      config.multipliers,
-                    )
-                  : 0;
+              const price = config
+                ? calculateFare(
+                    distance,
+                    durationMin,
+                    t.value,
+                    config.pricing,
+                    config.multipliers,
+                  )
+                : 0;
               return (
                 <TouchableOpacity
                   key={t.value}
@@ -347,9 +437,7 @@ export default function BookScreen() {
                   onPress={() => {
                     setTier(t.value);
                     setCouponApplied(null);
-                    setCouponError(null);
                   }}
-                  disabled={submitting}
                 >
                   <View style={[styles.optIcon, sel && styles.optIconSel]}>
                     <Ionicons
@@ -362,19 +450,18 @@ export default function BookScreen() {
                     <Text style={styles.optName}>{t.label}</Text>
                     <Text style={styles.optDesc}>{t.tagline}</Text>
                   </View>
-                  {price > 0 && (
-                    <Text
-                      style={[styles.optPrice, sel && { color: theme.primary }]}
-                    >
-                      {price.toLocaleString()}
-                    </Text>
-                  )}
+                  <Text
+                    style={[styles.optPrice, sel && { color: theme.primary }]}
+                  >
+                    {price.toLocaleString()}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
+        )}
 
-          {/* Payment */}
+        {distance > 0 && (
           <View style={styles.card}>
             <Text style={styles.sectionLabel}>PAYMENT METHOD</Text>
             <View style={styles.payRow}>
@@ -385,7 +472,6 @@ export default function BookScreen() {
                     key={p.value}
                     style={[styles.payOpt, sel && styles.paySel]}
                     onPress={() => setPayment(p.value)}
-                    disabled={submitting}
                   >
                     <Ionicons
                       name={p.icon}
@@ -402,8 +488,9 @@ export default function BookScreen() {
               })}
             </View>
           </View>
+        )}
 
-          {/* Coupon */}
+        {distance > 0 && (
           <View style={styles.card}>
             <Text style={styles.sectionLabel}>PROMO CODE (OPTIONAL)</Text>
             {couponApplied ? (
@@ -418,8 +505,10 @@ export default function BookScreen() {
                   </Text>
                 </View>
                 <TouchableOpacity
-                  onPress={removeCoupon}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() => {
+                    setCouponApplied(null);
+                    setCouponCode("");
+                  }}
                 >
                   <Ionicons
                     name="close-circle"
@@ -475,17 +564,15 @@ export default function BookScreen() {
               </>
             )}
           </View>
+        )}
 
-          {/* Fare + book */}
+        {distance > 0 && (
           <View style={styles.fareSummary}>
             <View style={{ flex: 1 }}>
               <Text style={styles.fareLabel}>TOTAL FARE</Text>
               {discountAmount > 0 && (
                 <Text style={styles.fareOrig}>
-                  <Text style={{ textDecorationLine: "line-through" }}>
-                    {baseFare.toLocaleString()}
-                  </Text>{" "}
-                  −{discountAmount.toLocaleString()}
+                  −{discountAmount.toLocaleString()} off
                 </Text>
               )}
               <Text style={styles.fareAmount}>
@@ -508,8 +595,8 @@ export default function BookScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -517,13 +604,80 @@ export default function BookScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.bg },
   scroll: { padding: 20, paddingBottom: 40 },
-  title: { fontSize: 26, fontWeight: "800", color: theme.text, marginTop: 8 },
-  subtitle: {
-    fontSize: 14,
-    color: theme.textMuted,
-    marginTop: 4,
-    marginBottom: 20,
+  title: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: theme.text,
+    marginTop: 8,
+    marginBottom: 16,
   },
+  field: {
+    backgroundColor: theme.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.border,
+    marginBottom: 10,
+  },
+  fieldRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+  },
+  dot: { width: 12, height: 12, borderRadius: 6 },
+  fieldInput: { flex: 1, color: theme.text, fontSize: 15 },
+  results: {
+    backgroundColor: theme.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.border,
+    marginBottom: 14,
+    overflow: "hidden",
+  },
+  searchingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 14,
+  },
+  searchingText: { color: theme.textMuted, fontSize: 13 },
+  resultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.divider,
+  },
+  resultText: { flex: 1, color: theme.text, fontSize: 14 },
+  mapCard: {
+    height: 180,
+    borderRadius: 16,
+    overflow: "hidden",
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  map: { flex: 1 },
+  routeLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: 12,
+  },
+  routeLoadingText: { color: theme.textMuted, fontSize: 13 },
+  distInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 12,
+    backgroundColor: theme.primaryFaint,
+    borderRadius: 10,
+    marginBottom: 14,
+  },
+  distLabel: { fontSize: 12, color: theme.textMuted },
+  distValue: { fontSize: 14, color: theme.primary, fontWeight: "700" },
   card: {
     backgroundColor: theme.surface,
     borderRadius: 16,
@@ -539,63 +693,6 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     marginBottom: 12,
   },
-  routeRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  dot: { width: 12, height: 12, borderRadius: 6, marginTop: 20 },
-  routeLine: {
-    width: 2,
-    height: 20,
-    backgroundColor: theme.border,
-    marginLeft: 5,
-    marginVertical: 4,
-  },
-  routeLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: theme.textMuted,
-    letterSpacing: 1,
-  },
-  routeInput: {
-    fontSize: 15,
-    color: theme.text,
-    paddingVertical: 6,
-    paddingBottom: 8,
-  },
-  gpsBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: theme.primaryFaint,
-    borderWidth: 1,
-    borderColor: theme.primaryBorder,
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 6,
-    marginBottom: 6,
-  },
-  gpsText: { color: theme.primary, fontSize: 13, fontWeight: "700" },
-  calcBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 6,
-  },
-  calcText: { color: theme.text, fontSize: 13, fontWeight: "700" },
-  distInfo: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: theme.primaryFaint,
-    borderRadius: 8,
-  },
-  distLabel: { fontSize: 12, color: theme.textMuted },
-  distValue: { fontSize: 14, color: theme.primary, fontWeight: "700" },
   opt: {
     flexDirection: "row",
     alignItems: "center",
@@ -694,7 +791,6 @@ const styles = StyleSheet.create({
     padding: 18,
     borderWidth: 1,
     borderColor: theme.primaryBorder,
-    marginTop: 6,
     gap: 14,
   },
   fareLabel: {

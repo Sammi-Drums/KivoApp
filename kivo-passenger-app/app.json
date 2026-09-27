@@ -12,15 +12,18 @@
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kivorides.passenger"
     },
     "android": {
       "package": "com.kivorides.passenger",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAOcmLYC_PMOR3JI5OOotjzAZMvNCUhf7k"
+        }
+      },
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
