@@ -45,6 +45,18 @@ export default function AppTabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="active"
+        options={{
+          title: "Active",
+          tabBarIcon: ({ color, focused }) => (
+            <Icon
+              name={focused ? "navigate" : "navigate-outline"}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="history"
         options={{
           title: "History",

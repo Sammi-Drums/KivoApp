@@ -3,13 +3,24 @@ import { supabase } from './supabase';
 
 let watchSub = null;
 
-// Start broadcasting the driver's location every ~8 seconds while on an active trip
+// Broadcast the driver's location. Used both during active trips
+// AND while the driver is online (so nearby-filtering works).
 export async function startLocationBroadcast(driverId) {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return { error: 'permission_denied' };
 
-    await stopLocationBroadcast(); // clear any previous watcher
+    await stopLocationBroadcast();
+
+    // Write an immediate first fix so nearby search works right away
+    try {
+      const first = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      await supabase.from('drivers').update({
+        current_latitude: first.coords.latitude,
+        current_longitude: first.coords.longitude,
+        location_updated_at: new Date().toISOString(),
+      }).eq('id', driverId);
+    } catch {}
 
     watchSub = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.Balanced, timeInterval: 8000, distanceInterval: 20 },
